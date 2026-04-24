@@ -48,11 +48,11 @@ class PredictionRequest(BaseModel):
     """Input payload for prediction endpoint."""
 
     datetime_iso: str = Field(..., description="ISO datetime, e.g. 2020-06-01T12:15:00")
-    dc_power: float
-    ambient_temperature: float
-    module_temperature: float
-    irradiation: float
-    wind_speed_10m: float
+    dc_power: float = Field(..., ge=0.0, le=50000.0)
+    ambient_temperature: float = Field(..., ge=-30.0, le=80.0)
+    module_temperature: float = Field(..., ge=-30.0, le=100.0)
+    irradiation: float = Field(..., ge=0.0, le=1.5)
+    wind_speed_10m: float = Field(..., ge=0.0, le=80.0)
     ac_power_lag_1: float | None = None
     ac_power_lag_2: float | None = None
     ac_power_lag_3: float | None = None
@@ -61,7 +61,7 @@ class PredictionRequest(BaseModel):
 
 def _build_feature_row(req: PredictionRequest) -> pd.DataFrame:
     """Build a model-ready feature row from request values."""
-    dt_parsed = pd.to_datetime(req.datetime_iso, errors="coerce", dayfirst=True)
+    dt_parsed = pd.to_datetime(req.datetime_iso, errors="coerce")
     if pd.isna(dt_parsed):
         raise ValueError(
             "Invalid datetime format. Use ISO like 2026-04-24T11:57:00 or similar valid datetime."
@@ -125,7 +125,7 @@ def predict(payload: PredictionRequest) -> dict:
     """Predict AC power (kW) for a single feature row."""
     try:
         # Physics guard: no sunlight implies no solar generation.
-        if payload.irradiation <= 0.0:
+        if payload.irradiation <= 0.01:
             return {"predicted_ac_power_kw": 0.0}
         x = _build_feature_row(payload)
         pred = float(model.predict(x)[0])
@@ -141,7 +141,7 @@ def predict(payload: PredictionRequest) -> dict:
 def simulate_wind(payload: PredictionRequest) -> dict:
     """Generate a wind sweep to visualize impact on predicted AC power."""
     try:
-        if payload.irradiation <= 0.0:
+        if payload.irradiation <= 0.01:
             return {
                 "curve": [
                     {"wind_speed_10m": round(float(wind), 2), "predicted_kw": 0.0}
@@ -202,7 +202,9 @@ def live_context(lat: float, lon: float) -> dict:
 
     irradiation = float(np.clip(sw / 1000.0, 0.0, 1.2))
     # Plant-scale DC proxy from irradiance for first prediction seed.
-    dc_power = float(max(0.0, 1500.0 + irradiation * 11500.0))
+    dc_power = float(max(0.0, irradiation * 13000.0))
+    if irradiation <= 0.01:
+        dc_power = 0.0
     module_temp = float(np.clip(temp + 4.0 + irradiation * 10.0 - 0.08 * wind, 20.0, 65.0))
 
     return {
@@ -214,5 +216,7 @@ def live_context(lat: float, lon: float) -> dict:
         "wind_speed_10m": round(wind, 3),
         "cloud_cover": round(cloud, 2),
         "source": "open-meteo",
+        "provider_time_local": dt_iso,
+        "raw_shortwave_radiation_wm2": round(sw, 2),
     }
 

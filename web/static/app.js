@@ -10,14 +10,32 @@ const inputIds = [
   "wind_speed_10m"
 ];
 
+function getLocalDateTimeValue() {
+  const raw = document.getElementById("datetime_iso").value;
+  if (!raw) return new Date().toISOString().slice(0, 19);
+  // Keep local wall-clock time stable (avoid UTC shift from toISOString()).
+  return raw.length === 16 ? `${raw}:00` : raw;
+}
+
+function clampNumber(v, lo, hi) {
+  return Math.min(hi, Math.max(lo, v));
+}
+
 function payloadFromInputs() {
+  const irradiation = clampNumber(Number(document.getElementById("irradiation").value), 0, 1.2);
+  const wind = clampNumber(Number(document.getElementById("wind_speed_10m").value), 0, 60);
+  const ambient = clampNumber(Number(document.getElementById("ambient_temperature").value), -20, 70);
+  const module = clampNumber(Number(document.getElementById("module_temperature").value), -20, 90);
+  let dcPower = clampNumber(Number(document.getElementById("dc_power").value), 0, 40000);
+  if (irradiation <= 0.01) dcPower = 0;
+
   return {
-    datetime_iso: new Date(document.getElementById("datetime_iso").value || Date.now()).toISOString(),
-    dc_power: Number(document.getElementById("dc_power").value),
-    ambient_temperature: Number(document.getElementById("ambient_temperature").value),
-    module_temperature: Number(document.getElementById("module_temperature").value),
-    irradiation: Number(document.getElementById("irradiation").value),
-    wind_speed_10m: Number(document.getElementById("wind_speed_10m").value)
+    datetime_iso: getLocalDateTimeValue(),
+    dc_power: dcPower,
+    ambient_temperature: ambient,
+    module_temperature: module,
+    irradiation: irradiation,
+    wind_speed_10m: wind
   };
 }
 
@@ -61,7 +79,7 @@ async function autofillFromLocation(lat, lon) {
     setInputValue("module_temperature", data.module_temperature);
     setInputValue("irradiation", data.irradiation);
     setInputValue("wind_speed_10m", data.wind_speed_10m);
-    liveStatusEl.textContent = `Live weather applied (cloud ${data.cloud_cover}%).`;
+    liveStatusEl.textContent = `Live weather applied from ${data.source} at ${data.provider_time_local} (cloud ${data.cloud_cover}%).`;
     await predict();
   } catch (err) {
     liveStatusEl.textContent = `Live weather error: ${err.message}`;
@@ -98,7 +116,11 @@ for (const id of inputIds) {
   }
 }
 
-document.getElementById("datetime_iso").value = new Date().toISOString().slice(0, 16);
+const now = new Date();
+const tzOffsetMs = now.getTimezoneOffset() * 60000;
+document.getElementById("datetime_iso").value = new Date(now.getTime() - tzOffsetMs)
+  .toISOString()
+  .slice(0, 16);
 fetch("/health")
   .then(r => r.json())
   .then(d => {
