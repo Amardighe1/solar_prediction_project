@@ -1,5 +1,6 @@
 const resultEl = document.getElementById("result");
 const liveStatusEl = document.getElementById("liveStatus");
+const API_BASE_URL = (window.API_BASE_URL || "").replace(/\/$/, "");
 
 const inputIds = [
   "datetime_iso",
@@ -39,10 +40,14 @@ function payloadFromInputs() {
   };
 }
 
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
+
 async function predict() {
   try {
     resultEl.textContent = "Predicting...";
-    const res = await fetch("/predict", {
+    const res = await fetch(apiUrl("/predict"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payloadFromInputs())
@@ -67,7 +72,9 @@ function setInputValue(id, value) {
 async function autofillFromLocation(lat, lon) {
   try {
     liveStatusEl.textContent = "Fetching live weather for your location...";
-    const res = await fetch(`/live-context?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+    const res = await fetch(
+      apiUrl(`/live-context?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)
+    );
     if (!res.ok) {
       liveStatusEl.textContent = `Live weather failed (${res.status}). You can still enter values manually.`;
       return;
@@ -121,13 +128,17 @@ const tzOffsetMs = now.getTimezoneOffset() * 60000;
 document.getElementById("datetime_iso").value = new Date(now.getTime() - tzOffsetMs)
   .toISOString()
   .slice(0, 16);
-fetch("/health")
-  .then(r => r.json())
+fetch(apiUrl("/health"))
+  .then(async (r) => {
+    if (!r.ok) throw new Error(`Health ${r.status}`);
+    return r.json();
+  })
   .then(d => {
     resultEl.textContent = `API connected. Model: ${d.model}. Click Predict Now.`;
   })
   .catch(() => {
-    resultEl.textContent = "API not reachable. Start server with: uvicorn api.app:app --reload";
+    resultEl.textContent =
+      "API not reachable. For local run uvicorn; for Vercel set window.API_BASE_URL to deployed backend.";
   });
 useLiveWeather();
 
