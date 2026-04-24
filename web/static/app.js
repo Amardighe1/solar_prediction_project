@@ -45,6 +45,14 @@ function apiUrl(path) {
   return `${API_BASE_URL}${path}`;
 }
 
+function getApiHeaders(extra = {}) {
+  const headers = { ...extra };
+  if (API_BASE_URL.includes(".loca.lt")) {
+    headers["bypass-tunnel-reminder"] = "true";
+  }
+  return headers;
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 6000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -84,7 +92,7 @@ function askBackendUrl() {
 
 async function checkBackendConnection() {
   try {
-    const r = await fetchWithTimeout(apiUrl("/health"), {}, 4500);
+    const r = await fetchWithTimeout(apiUrl("/health"), { headers: getApiHeaders() }, 4500);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     resultEl.textContent = `API connected. Model: ${d.model}. Ready.`;
@@ -100,7 +108,7 @@ async function predict() {
     resultEl.textContent = "Predicting...";
     const res = await fetchWithTimeout(apiUrl("/predict"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getApiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payloadFromInputs())
     }, 5500);
     if (!res.ok) {
@@ -124,8 +132,10 @@ async function autofillFromLocation(lat, lon) {
   try {
     liveStatusEl.textContent = "Fetching live weather for your location...";
     const res = await fetchWithTimeout(
-      apiUrl(`/live-context?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)
-    , {}, 5500);
+      apiUrl(`/live-context?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`),
+      { headers: getApiHeaders() },
+      5500
+    );
     if (!res.ok) {
       liveStatusEl.textContent = `Live weather failed (${res.status}). You can still enter values manually.`;
       return;

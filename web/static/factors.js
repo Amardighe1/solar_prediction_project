@@ -35,6 +35,14 @@ function apiUrl(path) {
   return `${API_BASE_URL}${path}`;
 }
 
+function getApiHeaders(extra = {}) {
+  const headers = { ...extra };
+  if (API_BASE_URL.includes(".loca.lt")) {
+    headers["bypass-tunnel-reminder"] = "true";
+  }
+  return headers;
+}
+
 function resolveApiBaseUrl() {
   const params = new URLSearchParams(window.location.search);
   const queryApi = (params.get("api") || "").trim();
@@ -142,7 +150,7 @@ async function fetchPrediction(s) {
   };
   const res = await fetchWithTimeout(apiUrl("/predict"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getApiHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload)
   }, 4500);
   if (!res.ok) throw new Error(`API ${res.status}`);
