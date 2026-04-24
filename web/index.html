@@ -8,11 +8,18 @@
   </head>
   <body>
     <div class="bg-glow"></div>
+    <nav class="top-nav">
+      <div class="nav-brand">Solar Forecast</div>
+      <div class="nav-links">
+        <a class="nav-link active" href="/">Home</a>
+        <a class="nav-link" href="/factors">Factors</a>
+      </div>
+    </nav>
     <main class="container">
       <section class="card">
         <h1>Solar Power Forecast Studio</h1>
         <p class="sub">
-          Production model: XGBoost. Interactive wind animation shows how wind shifts predicted AC power.
+          Production model: XGBoost. Live sun-cloud simulation shows how sky conditions change predicted AC power.
         </p>
 
         <div class="grid">
@@ -26,18 +33,14 @@
 
         <div class="actions">
           <button id="predictBtn">Predict Now</button>
-          <button id="simulateBtn">Animate Wind Effect</button>
+          <button id="liveBtn">Use My Live Weather</button>
           <a class="btn-link" href="/factors">Sun/Cloud Impact Page</a>
         </div>
 
         <div id="result" class="result">Prediction will appear here.</div>
+        <div id="liveStatus" class="curve-info">Live weather autofill: waiting.</div>
       </section>
 
-      <section class="card">
-        <h2>Wind-to-Current Animation</h2>
-        <canvas id="windCanvas" width="760" height="280"></canvas>
-        <div id="curveInfo" class="curve-info">Run simulation to see wind-impact curve.</div>
-      </section>
       <section class="card">
         <h2>Automatic Sun/Cloud Performance Animation</h2>
         <p class="sub">Live model-driven environment dynamics from the factors module.</p>

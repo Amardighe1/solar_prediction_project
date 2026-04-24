@@ -24,6 +24,7 @@ let lag1 = 9000;
 let lag2 = 8900;
 let lag3 = 8800;
 let lastIrr = 0.62;
+let frameCount = 0;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -39,16 +40,27 @@ function buildStateManual() {
 }
 
 function buildStateAuto() {
-  t += 0.035;
-  const sunlight = clamp(68 + 22 * Math.sin(t * 0.23), 30, 95);
-  const cloudPos = 190 + 430 * ((Math.sin(t * 0.8) + 1) / 2);
+  t += 0.22;
+  // Deterministic cloud pass over a fixed sun for physically consistent demo behavior.
+  const sceneWidth = 820;
+  const cloudSpan = 220;
+  const travel = sceneWidth + cloudSpan * 2;
+  const phase = (t * 0.02) % 1;
+  const cloudPos = -cloudSpan + phase * travel;
   const sunCenter = 128;
-  const overlap = clamp(1 - Math.abs(cloudPos - sunCenter) / 210, 0, 1);
-  const cloudCover = clamp(15 + overlap * 75 + 10 * (Math.sin(t * 1.4) + 1) / 2, 5, 95);
-  const wind = clamp(2.2 + 1.6 * Math.sin(t * 0.65) + 1.1 * Math.sin(t * 1.3), 0.4, 12);
-  const effectiveSun = Math.max(0, sunlight * (1 - cloudCover / 100));
-  const irradiation = clamp(effectiveSun / 100 * 1.05, 0, 1.2);
-  const ambientTemperature = clamp(24 + 7 * (sunlight / 100) - 1.2 * (cloudCover / 100), 18, 42);
+
+  // Overlap factor: 0 means cloud away from sun, 1 means cloud centered on sun.
+  const overlap = clamp(1 - Math.abs(cloudPos - sunCenter) / 170, 0, 1);
+
+  // Clear-sky irradiance baseline drifts slowly (day variability), then cloud overlap attenuates it.
+  const clearSkySunlight = clamp(84 + 8 * Math.sin(t * 0.18), 70, 95);
+  const sunlight = clamp(clearSkySunlight * (1 - 0.88 * overlap), 5, 100);
+  const cloudCover = clamp(overlap * 100, 0, 100);
+  const wind = clamp(2.2 + 1.4 * Math.sin(t * 0.65) + 1.0 * Math.sin(t * 1.3), 0.4, 12);
+
+  const irradiation = clamp((sunlight / 100) * 1.05, 0, 1.2);
+  const ambientTemperature = clamp(24 + 7 * (clearSkySunlight / 100) - 2.4 * overlap, 18, 42);
+  const effectiveSun = sunlight;
   const moduleTemperature = clamp(ambientTemperature + 5 + 0.1 * effectiveSun - 0.08 * wind, 20, 65);
   return { sunlight, cloudCover, wind, irradiation, ambientTemperature, moduleTemperature, cloudPos };
 }
@@ -106,14 +118,18 @@ async function fetchPrediction(s) {
 
 async function tick() {
   const state = isEmbed ? buildStateAuto() : buildStateManual();
-  try {
-    const pred = await fetchPrediction(state);
-    lastPred = pred;
-    lag3 = lag2;
-    lag2 = lag1;
-    lag1 = pred;
-    lastIrr = state.irradiation;
-  } catch (_e) {}
+  frameCount += 1;
+  const shouldPredict = !isEmbed || frameCount % 10 === 0;
+  if (shouldPredict) {
+    try {
+      const pred = await fetchPrediction(state);
+      lastPred = pred;
+      lag3 = lag2;
+      lag2 = lag1;
+      lag1 = pred;
+      lastIrr = state.irradiation;
+    } catch (_e) {}
+  }
   renderState(state, lastPred);
 }
 
@@ -121,6 +137,6 @@ if (!isEmbed) {
   [sunlightInput, cloudInput, windInput].forEach((el) => el.addEventListener("input", tick));
 }
 
-setInterval(tick, isEmbed ? 1200 : 1800);
+setInterval(tick, isEmbed ? 120 : 1800);
 tick();
 

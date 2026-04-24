@@ -1,14 +1,14 @@
 const resultEl = document.getElementById("result");
-const curveInfoEl = document.getElementById("curveInfo");
-const canvas = document.getElementById("windCanvas");
-const ctx = canvas.getContext("2d");
+const liveStatusEl = document.getElementById("liveStatus");
 
-const particles = Array.from({ length: 120 }, () => ({
-  x: Math.random() * canvas.width,
-  y: Math.random() * canvas.height,
-  vx: 0.4 + Math.random() * 0.7,
-  size: 1 + Math.random() * 2
-}));
+const inputIds = [
+  "datetime_iso",
+  "dc_power",
+  "ambient_temperature",
+  "module_temperature",
+  "irradiation",
+  "wind_speed_10m"
+];
 
 function payloadFromInputs() {
   return {
@@ -41,66 +41,62 @@ async function predict() {
   }
 }
 
-let curve = [];
-async function simulateWind() {
+function setInputValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+
+async function autofillFromLocation(lat, lon) {
   try {
-    curveInfoEl.textContent = "Running wind simulation...";
-    const res = await fetch("/simulate-wind", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payloadFromInputs())
-    });
+    liveStatusEl.textContent = "Fetching live weather for your location...";
+    const res = await fetch(`/live-context?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
     if (!res.ok) {
-      const txt = await res.text();
-      curveInfoEl.textContent = `Simulation failed (${res.status}): ${txt}`;
+      liveStatusEl.textContent = `Live weather failed (${res.status}). You can still enter values manually.`;
       return;
     }
     const data = await res.json();
-    curve = data.curve || [];
-    if (curve.length) {
-      const minY = Math.min(...curve.map(p => p.predicted_kw));
-      const maxY = Math.max(...curve.map(p => p.predicted_kw));
-      curveInfoEl.textContent = `Wind sweep simulated. Predicted range: ${minY.toFixed(2)} to ${maxY.toFixed(2)} kW`;
-    }
+    setInputValue("datetime_iso", String(data.datetime_iso).slice(0, 16));
+    setInputValue("dc_power", data.dc_power);
+    setInputValue("ambient_temperature", data.ambient_temperature);
+    setInputValue("module_temperature", data.module_temperature);
+    setInputValue("irradiation", data.irradiation);
+    setInputValue("wind_speed_10m", data.wind_speed_10m);
+    liveStatusEl.textContent = `Live weather applied (cloud ${data.cloud_cover}%).`;
+    await predict();
   } catch (err) {
-    curveInfoEl.textContent = `Simulation error: ${err.message}. Is API running?`;
+    liveStatusEl.textContent = `Live weather error: ${err.message}`;
   }
 }
 
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const wind = Number(document.getElementById("wind_speed_10m").value || 0);
-  const speedFactor = 0.5 + wind / 8;
-
-  for (const p of particles) {
-    p.x += p.vx * speedFactor;
-    if (p.x > canvas.width + 10) p.x = -10;
-    ctx.beginPath();
-    ctx.fillStyle = "rgba(110, 220, 255, 0.8)";
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
+async function useLiveWeather() {
+  if (!navigator.geolocation) {
+    liveStatusEl.textContent = "Geolocation unavailable. Falling back to Pune.";
+    await autofillFromLocation(18.5204, 73.8567);
+    return;
   }
-
-  if (curve.length > 1) {
-    const pad = 28;
-    const xs = curve.map((_, i) => pad + (i / (curve.length - 1)) * (canvas.width - 2 * pad));
-    const ysRaw = curve.map(p => p.predicted_kw);
-    const yMin = Math.min(...ysRaw);
-    const yMax = Math.max(...ysRaw);
-    const ys = ysRaw.map(v => canvas.height - pad - ((v - yMin) / ((yMax - yMin) || 1)) * (canvas.height - 2 * pad));
-
-    ctx.beginPath();
-    ctx.strokeStyle = "#34f5c5";
-    ctx.lineWidth = 2.4;
-    ctx.moveTo(xs[0], ys[0]);
-    for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], ys[i]);
-    ctx.stroke();
-  }
-  requestAnimationFrame(draw);
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      await autofillFromLocation(pos.coords.latitude, pos.coords.longitude);
+    },
+    async () => {
+      liveStatusEl.textContent = "Location denied. Falling back to Pune.";
+      await autofillFromLocation(18.5204, 73.8567);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+  );
 }
 
 document.getElementById("predictBtn").addEventListener("click", predict);
-document.getElementById("simulateBtn").addEventListener("click", simulateWind);
+document.getElementById("liveBtn").addEventListener("click", useLiveWeather);
+
+for (const id of inputIds) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener("change", () => {
+      liveStatusEl.textContent = "Using user-edited values.";
+    });
+  }
+}
 
 document.getElementById("datetime_iso").value = new Date().toISOString().slice(0, 16);
 fetch("/health")
@@ -111,5 +107,5 @@ fetch("/health")
   .catch(() => {
     resultEl.textContent = "API not reachable. Start server with: uvicorn api.app:app --reload";
   });
-draw();
+useLiveWeather();
 

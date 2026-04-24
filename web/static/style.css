@@ -18,6 +18,43 @@ body {
   display: grid;
   gap: 16px;
 }
+.top-nav{
+  width:min(1080px,95%);
+  margin:14px auto 0;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:10px 14px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(255,255,255,.05);
+  backdrop-filter:blur(7px);
+}
+.nav-brand{
+  font-weight:700;
+  letter-spacing:.2px;
+  color:#e9f2ff;
+}
+.nav-links{
+  display:flex;
+  gap:8px;
+}
+.nav-link{
+  text-decoration:none;
+  color:#dbe8ff;
+  padding:8px 12px;
+  border-radius:8px;
+  border:1px solid transparent;
+}
+.nav-link:hover{
+  border-color:rgba(255,255,255,.2);
+  background:rgba(255,255,255,.06);
+}
+.nav-link.active{
+  color:#061025;
+  background:linear-gradient(90deg,#34f5c5,#6ec4ff);
+  font-weight:600;
+}
 .card {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.15);

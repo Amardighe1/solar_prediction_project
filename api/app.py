@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+import urllib.parse
+import urllib.request
 
 import joblib
 import numpy as np
@@ -154,4 +156,52 @@ def simulate_wind(payload: PredictionRequest) -> dict:
 def factors_page() -> FileResponse:
     """Serve interactive factors animation page."""
     return FileResponse(WEB_DIR / "factors.html")
+
+
+@app.get("/live-context")
+def live_context(lat: float, lon: float) -> dict:
+    """Fetch live weather for coordinates and map it to model-ready defaults."""
+    try:
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": ",".join(
+                [
+                    "temperature_2m",
+                    "wind_speed_10m",
+                    "cloud_cover",
+                    "shortwave_radiation",
+                    "is_day",
+                ]
+            ),
+            "timezone": "auto",
+        }
+        url = f"https://api.open-meteo.com/v1/forecast?{urllib.parse.urlencode(params)}"
+        with urllib.request.urlopen(url, timeout=30) as response:  # nosec B310
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:  # pylint: disable=broad-except
+        raise HTTPException(status_code=502, detail=f"Weather provider error: {exc}") from exc
+
+    current = payload.get("current", {})
+    temp = float(current.get("temperature_2m", 30.0))
+    wind = float(current.get("wind_speed_10m", 3.0))
+    cloud = float(current.get("cloud_cover", 20.0))
+    sw = float(current.get("shortwave_radiation", 650.0))
+    dt_iso = str(current.get("time", datetime.utcnow().isoformat()))
+
+    irradiation = float(np.clip(sw / 1000.0, 0.0, 1.2))
+    # Plant-scale DC proxy from irradiance for first prediction seed.
+    dc_power = float(max(0.0, 1500.0 + irradiation * 11500.0))
+    module_temp = float(np.clip(temp + 4.0 + irradiation * 10.0 - 0.08 * wind, 20.0, 65.0))
+
+    return {
+        "datetime_iso": dt_iso,
+        "dc_power": round(dc_power, 3),
+        "ambient_temperature": round(temp, 3),
+        "module_temperature": round(module_temp, 3),
+        "irradiation": round(irradiation, 4),
+        "wind_speed_10m": round(wind, 3),
+        "cloud_cover": round(cloud, 2),
+        "source": "open-meteo",
+    }
 
