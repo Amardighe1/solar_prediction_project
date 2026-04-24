@@ -1,6 +1,7 @@
 const resultEl = document.getElementById("result");
 const liveStatusEl = document.getElementById("liveStatus");
-const API_BASE_URL = (window.API_BASE_URL || "").replace(/\/$/, "");
+const DEFAULT_API_BASE = (window.API_BASE_URL || "").replace(/\/$/, "");
+let API_BASE_URL = "";
 
 const inputIds = [
   "datetime_iso",
@@ -42,6 +43,32 @@ function payloadFromInputs() {
 
 function apiUrl(path) {
   return `${API_BASE_URL}${path}`;
+}
+
+function setApiBaseUrl(url) {
+  API_BASE_URL = (url || "").trim().replace(/\/$/, "");
+  if (API_BASE_URL) {
+    localStorage.setItem("solar_api_base_url", API_BASE_URL);
+  } else {
+    localStorage.removeItem("solar_api_base_url");
+  }
+}
+
+function resolveApiBaseUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const queryApi = (params.get("api") || "").trim();
+  const storedApi = (localStorage.getItem("solar_api_base_url") || "").trim();
+  setApiBaseUrl(queryApi || storedApi || DEFAULT_API_BASE);
+}
+
+function askBackendUrl() {
+  const current = API_BASE_URL || "https://your-backend-tunnel.example.com";
+  const userInput = window.prompt("Enter HTTPS backend URL (leave blank for same-origin):", current);
+  if (userInput === null) return;
+  setApiBaseUrl(userInput);
+  liveStatusEl.textContent = API_BASE_URL
+    ? `Backend URL set to ${API_BASE_URL}`
+    : "Backend URL reset to same-origin.";
 }
 
 async function predict() {
@@ -113,6 +140,7 @@ async function useLiveWeather() {
 
 document.getElementById("predictBtn").addEventListener("click", predict);
 document.getElementById("liveBtn").addEventListener("click", useLiveWeather);
+document.getElementById("backendBtn").addEventListener("click", askBackendUrl);
 
 for (const id of inputIds) {
   const el = document.getElementById(id);
@@ -128,6 +156,7 @@ const tzOffsetMs = now.getTimezoneOffset() * 60000;
 document.getElementById("datetime_iso").value = new Date(now.getTime() - tzOffsetMs)
   .toISOString()
   .slice(0, 16);
+resolveApiBaseUrl();
 fetch(apiUrl("/health"))
   .then(async (r) => {
     if (!r.ok) throw new Error(`Health ${r.status}`);

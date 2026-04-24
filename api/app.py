@@ -7,12 +7,14 @@ from datetime import datetime
 from pathlib import Path
 import urllib.parse
 import urllib.request
+import os
 
 import joblib
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI
 from fastapi import HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -42,6 +44,21 @@ feature_defaults = metadata["feature_medians"]
 
 app = FastAPI(title="Solar + Wind Prediction API", version="1.0.0")
 app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+
+cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+if cors_origins_env:
+    allow_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+else:
+    # Safe default for quick setup; tighten via CORS_ALLOW_ORIGINS in production.
+    allow_origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class PredictionRequest(BaseModel):
