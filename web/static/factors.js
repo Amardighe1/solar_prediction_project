@@ -66,6 +66,19 @@ function estimatedKwFallback(state) {
   return clamp(state.irradiation * 13000 * efficiencyFactor, 0, 30000);
 }
 
+function physicalEnvelopeKw(state) {
+  if (state.irradiation <= 0.01) return 0;
+  // Conservative physically plausible cap for instant generation display.
+  const capFromIrradiation = 13000 * state.irradiation;
+  const capFromDcProxy = state.dcPowerProxy * 1.08 + 250;
+  return Math.max(0, Math.min(capFromIrradiation, capFromDcProxy));
+}
+
+function normalizeDisplayedGeneration(state, rawPrediction) {
+  const envelope = physicalEnvelopeKw(state);
+  return clamp(rawPrediction, 0, envelope);
+}
+
 function buildStateManual() {
   const sunlight = Number(sunlightInput.value);
   const cloudCover = Number(cloudInput.value);
@@ -74,7 +87,16 @@ function buildStateManual() {
   const irradiation = clamp(effectiveSun / 100 * 1.05, 0, 1.2);
   const ambientTemperature = clamp(22 + 0.10 * sunlight - 0.02 * cloudCover, 18, 42);
   const moduleTemperature = clamp(ambientTemperature + 4 + 0.09 * effectiveSun - 0.08 * wind, 20, 65);
-  return { sunlight, cloudCover, wind, irradiation, ambientTemperature, moduleTemperature };
+  const dcPowerProxy = irradiation <= 0.01 ? 0 : Math.max(0, 1500 + irradiation * 11500);
+  return {
+    sunlight,
+    cloudCover,
+    wind,
+    irradiation,
+    ambientTemperature,
+    moduleTemperature,
+    dcPowerProxy
+  };
 }
 
 function buildStateAuto() {
@@ -100,7 +122,17 @@ function buildStateAuto() {
   const ambientTemperature = clamp(24 + 7 * (clearSkySunlight / 100) - 2.4 * overlap, 18, 42);
   const effectiveSun = sunlight;
   const moduleTemperature = clamp(ambientTemperature + 5 + 0.1 * effectiveSun - 0.08 * wind, 20, 65);
-  return { sunlight, cloudCover, wind, irradiation, ambientTemperature, moduleTemperature, cloudPos };
+  const dcPowerProxy = irradiation <= 0.01 ? 0 : Math.max(0, 1500 + irradiation * 11500);
+  return {
+    sunlight,
+    cloudCover,
+    wind,
+    irradiation,
+    ambientTemperature,
+    moduleTemperature,
+    cloudPos,
+    dcPowerProxy
+  };
 }
 
 function renderState(s, predictedKw) {
@@ -138,7 +170,7 @@ function renderState(s, predictedKw) {
 async function fetchPrediction(s) {
   const payload = {
     datetime_iso: new Date().toISOString(),
-    dc_power: Math.max(0, 1500 + s.irradiation * 11500),
+    dc_power: s.dcPowerProxy,
     ambient_temperature: s.ambientTemperature,
     module_temperature: s.moduleTemperature,
     irradiation: s.irradiation,
@@ -165,7 +197,7 @@ async function tick() {
   if (shouldPredict) {
     try {
       const pred = await fetchPrediction(state);
-      lastPred = pred;
+      lastPred = normalizeDisplayedGeneration(state, pred);
       usingLiveModel = true;
       lag3 = lag2;
       lag2 = lag1;
@@ -173,7 +205,7 @@ async function tick() {
       lastIrr = state.irradiation;
     } catch (_e) {
       usingLiveModel = false;
-      lastPred = estimatedKwFallback(state);
+      lastPred = normalizeDisplayedGeneration(state, estimatedKwFallback(state));
       lag3 = lag2;
       lag2 = lag1;
       lag1 = lastPred;
@@ -181,7 +213,7 @@ async function tick() {
     }
   } else if (!usingLiveModel) {
     // Keep fallback dynamic even between request intervals.
-    lastPred = estimatedKwFallback(state);
+    lastPred = normalizeDisplayedGeneration(state, estimatedKwFallback(state));
   }
   renderState(state, lastPred);
 }
