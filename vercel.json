@@ -1,21 +1,27 @@
 {
   "version": 2,
-  "cleanUrls": true,
-  "trailingSlash": false,
-  "installCommand": "echo \"No install needed for static frontend\"",
-  "buildCommand": "echo \"Static frontend build complete\"",
-  "rewrites": [
+  "builds": [
     {
-      "source": "/static/:path*",
-      "destination": "/web/static/:path*"
+      "src": "web/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/static/(.*)",
+      "dest": "/web/static/$1"
     },
     {
-      "source": "/factors",
-      "destination": "/web/factors.html"
+      "src": "/factors",
+      "dest": "/web/factors.html"
     },
     {
-      "source": "/",
-      "destination": "/web/index.html"
+      "src": "/",
+      "dest": "/web/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/web/index.html"
     }
   ]
 }
