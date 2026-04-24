@@ -1,0 +1,8 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "outputDirectory": "web",
+  "installCommand": "echo \"No install needed for static frontend\"",
+  "buildCommand": "echo \"Static frontend build complete\""
+}
+
