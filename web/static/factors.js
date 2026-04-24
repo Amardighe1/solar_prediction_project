@@ -15,6 +15,8 @@ const ambText = document.getElementById("ambText");
 const modText = document.getElementById("modText");
 const predText = document.getElementById("predText");
 const isEmbed = new URLSearchParams(window.location.search).get("embed") === "1";
+const DEFAULT_API_BASE = (window.API_BASE_URL || "").replace(/\/$/, "");
+let API_BASE_URL = "";
 
 if (isEmbed) document.body.classList.add("embed");
 
@@ -25,8 +27,36 @@ let lag2 = 8900;
 let lag3 = 8800;
 let lastIrr = 0.62;
 let frameCount = 0;
+let usingLiveModel = false;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
+
+function resolveApiBaseUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const queryApi = (params.get("api") || "").trim();
+  const storedApi = (localStorage.getItem("solar_api_base_url") || "").trim();
+  API_BASE_URL = (queryApi || storedApi || DEFAULT_API_BASE || "").replace(/\/$/, "");
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function estimatedKwFallback(state) {
+  // Physical fallback estimation for stable UX when backend/tunnel is unavailable.
+  const efficiencyFactor = 1 - 0.03 * (state.wind / 12);
+  return clamp(state.irradiation * 13000 * efficiencyFactor, 0, 30000);
+}
 
 function buildStateManual() {
   const sunlight = Number(sunlightInput.value);
@@ -73,7 +103,7 @@ function renderState(s, predictedKw) {
   modText.textContent = `${s.moduleTemperature.toFixed(1)} C`;
   irrText.textContent = s.irradiation.toFixed(3);
   genText.textContent = `${predictedKw.toFixed(0)} kW`;
-  predText.textContent = `${predictedKw.toFixed(2)} kW`;
+  predText.textContent = `${predictedKw.toFixed(2)} kW ${usingLiveModel ? "(Live Model)" : "(Estimated Fallback)"}`;
   irrBar.style.width = `${Math.min(100, s.irradiation * 100)}%`;
   genBar.style.width = `${Math.min(100, predictedKw / 140)}%`;
 
@@ -86,10 +116,14 @@ function renderState(s, predictedKw) {
 
   if (s.cloudCover > 60 || s.sunlight < 35) {
     sun.classList.add("sun-dim");
-    msgText.textContent = "Clouds cover the sun, reducing irradiance and ML-predicted output.";
+    msgText.textContent = usingLiveModel
+      ? "Clouds cover the sun, reducing irradiance and live model output."
+      : "Clouds cover the sun. Backend offline, using fallback estimation.";
   } else {
     sun.classList.remove("sun-dim");
-    msgText.textContent = "Clear sunlight increases irradiance and ML-predicted output.";
+    msgText.textContent = usingLiveModel
+      ? "Clear sunlight increases irradiance and live model output."
+      : "Clear sunlight increases irradiance. Backend offline, using fallback estimation.";
   }
 }
 
@@ -106,11 +140,11 @@ async function fetchPrediction(s) {
     ac_power_lag_3: lag3,
     irrad_lag_1: lastIrr
   };
-  const res = await fetch("/predict", {
+  const res = await fetchWithTimeout(apiUrl("/predict"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
-  });
+  }, 4500);
   if (!res.ok) throw new Error(`API ${res.status}`);
   const data = await res.json();
   return data.predicted_ac_power_kw;
@@ -124,15 +158,27 @@ async function tick() {
     try {
       const pred = await fetchPrediction(state);
       lastPred = pred;
+      usingLiveModel = true;
       lag3 = lag2;
       lag2 = lag1;
       lag1 = pred;
       lastIrr = state.irradiation;
-    } catch (_e) {}
+    } catch (_e) {
+      usingLiveModel = false;
+      lastPred = estimatedKwFallback(state);
+      lag3 = lag2;
+      lag2 = lag1;
+      lag1 = lastPred;
+      lastIrr = state.irradiation;
+    }
+  } else if (!usingLiveModel) {
+    // Keep fallback dynamic even between request intervals.
+    lastPred = estimatedKwFallback(state);
   }
   renderState(state, lastPred);
 }
 
+resolveApiBaseUrl();
 if (!isEmbed) {
   [sunlightInput, cloudInput, windInput].forEach((el) => el.addEventListener("input", tick));
 }

@@ -45,6 +45,16 @@ function apiUrl(path) {
   return `${API_BASE_URL}${path}`;
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 6000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function setApiBaseUrl(url) {
   API_BASE_URL = (url || "").trim().replace(/\/$/, "");
   if (API_BASE_URL) {
@@ -67,18 +77,32 @@ function askBackendUrl() {
   if (userInput === null) return;
   setApiBaseUrl(userInput);
   liveStatusEl.textContent = API_BASE_URL
-    ? `Backend URL set to ${API_BASE_URL}`
+    ? `Backend URL set to ${API_BASE_URL}. Checking connection...`
     : "Backend URL reset to same-origin.";
+  checkBackendConnection();
+}
+
+async function checkBackendConnection() {
+  try {
+    const r = await fetchWithTimeout(apiUrl("/health"), {}, 4500);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    resultEl.textContent = `API connected. Model: ${d.model}. Ready.`;
+    return true;
+  } catch (err) {
+    resultEl.textContent = `Backend check failed: ${err.message}`;
+    return false;
+  }
 }
 
 async function predict() {
   try {
     resultEl.textContent = "Predicting...";
-    const res = await fetch(apiUrl("/predict"), {
+    const res = await fetchWithTimeout(apiUrl("/predict"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payloadFromInputs())
-    });
+    }, 5500);
     if (!res.ok) {
       const txt = await res.text();
       resultEl.textContent = `Prediction failed (${res.status}): ${txt}`;
@@ -99,9 +123,9 @@ function setInputValue(id, value) {
 async function autofillFromLocation(lat, lon) {
   try {
     liveStatusEl.textContent = "Fetching live weather for your location...";
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       apiUrl(`/live-context?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)
-    );
+    , {}, 5500);
     if (!res.ok) {
       liveStatusEl.textContent = `Live weather failed (${res.status}). You can still enter values manually.`;
       return;
@@ -157,17 +181,11 @@ document.getElementById("datetime_iso").value = new Date(now.getTime() - tzOffse
   .toISOString()
   .slice(0, 16);
 resolveApiBaseUrl();
-fetch(apiUrl("/health"))
-  .then(async (r) => {
-    if (!r.ok) throw new Error(`Health ${r.status}`);
-    return r.json();
-  })
-  .then(d => {
-    resultEl.textContent = `API connected. Model: ${d.model}. Click Predict Now.`;
-  })
-  .catch(() => {
+checkBackendConnection().then((ok) => {
+  if (!ok) {
     resultEl.textContent =
-      "API not reachable. For local run uvicorn; for Vercel set window.API_BASE_URL to deployed backend.";
-  });
+      "API not reachable. Set Backend URL again, keep backend+tunnel running, then retry.";
+  }
+});
 useLiveWeather();
 
