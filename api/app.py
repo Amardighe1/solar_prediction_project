@@ -124,8 +124,12 @@ def model_info() -> dict:
 def predict(payload: PredictionRequest) -> dict:
     """Predict AC power (kW) for a single feature row."""
     try:
+        # Physics guard: no sunlight implies no solar generation.
+        if payload.irradiation <= 0.0:
+            return {"predicted_ac_power_kw": 0.0}
         x = _build_feature_row(payload)
         pred = float(model.predict(x)[0])
+        pred = max(0.0, pred)
         return {"predicted_ac_power_kw": round(pred, 3)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -137,6 +141,13 @@ def predict(payload: PredictionRequest) -> dict:
 def simulate_wind(payload: PredictionRequest) -> dict:
     """Generate a wind sweep to visualize impact on predicted AC power."""
     try:
+        if payload.irradiation <= 0.0:
+            return {
+                "curve": [
+                    {"wind_speed_10m": round(float(wind), 2), "predicted_kw": 0.0}
+                    for wind in np.linspace(0, 12, 49)
+                ]
+            }
         sweep = []
         for wind in np.linspace(0, 12, 49):
             mutable = payload.model_copy(update={"wind_speed_10m": float(wind)})
